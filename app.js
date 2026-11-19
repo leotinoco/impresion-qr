@@ -17,6 +17,7 @@
     marginTopMm: 12.7,
     colGapMm: 1.2,
     rowGapMm: 3.5,
+    pdfQuality: 'optimal',
     showGuides: false,
   };
 
@@ -47,6 +48,7 @@
     verticalAlign: document.getElementById('verticalAlign'),
     colGapMm: document.getElementById('colGapMm'),
     rowGapMm: document.getElementById('rowGapMm'),
+    pdfQuality: document.getElementById('pdfQuality'),
     showGuides: document.getElementById('showGuides'),
     btnResetSettings: document.getElementById('btnResetSettings'),
     settingsHint: document.querySelector('.settings-hint'),
@@ -151,6 +153,7 @@
       state.settings.verticalAlign === DEFAULT_SETTINGS.verticalAlign &&
       Math.abs(state.settings.colGapMm - DEFAULT_SETTINGS.colGapMm) < 0.01 &&
       Math.abs(state.settings.rowGapMm - DEFAULT_SETTINGS.rowGapMm) < 0.01 &&
+      state.settings.pdfQuality === DEFAULT_SETTINGS.pdfQuality &&
       state.settings.showGuides === DEFAULT_SETTINGS.showGuides
     );
   }
@@ -474,27 +477,45 @@
     return 'other';
   }
 
-  function convertFileToPngBytes(file) {
+  function renderFileToCanvasBytes(file, mimeType, quality, maxDimension) {
     return new Promise((resolve, reject) => {
       const url = URL.createObjectURL(file);
       const img = new Image();
       img.onload = () => {
         try {
+          const naturalW = img.naturalWidth || img.width;
+          const naturalH = img.naturalHeight || img.height;
+          let targetW = naturalW;
+          let targetH = naturalH;
+
+          if (maxDimension && Math.max(naturalW, naturalH) > maxDimension) {
+            const scale = maxDimension / Math.max(naturalW, naturalH);
+            targetW = Math.round(naturalW * scale);
+            targetH = Math.round(naturalH * scale);
+          }
+
           const canvas = document.createElement('canvas');
-          canvas.width = img.naturalWidth || img.width;
-          canvas.height = img.naturalHeight || img.height;
+          canvas.width = targetW;
+          canvas.height = targetH;
           const ctx = canvas.getContext('2d');
           ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
-          ctx.drawImage(img, 0, 0);
-          canvas.toBlob((blob) => {
-            URL.revokeObjectURL(url);
-            if (!blob) {
-              reject(new Error(`No se pudo convertir la imagen ${file.name}`));
-              return;
-            }
-            blob.arrayBuffer().then((buf) => resolve(new Uint8Array(buf)), reject);
-          }, 'image/png');
+          ctx.fillRect(0, 0, targetW, targetH);
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(img, 0, 0, targetW, targetH);
+
+          canvas.toBlob(
+            (blob) => {
+              URL.revokeObjectURL(url);
+              if (!blob) {
+                reject(new Error(`No se pudo procesar la imagen ${file.name}`));
+                return;
+              }
+              blob.arrayBuffer().then((buf) => resolve(new Uint8Array(buf)), reject);
+            },
+            mimeType,
+            quality
+          );
         } catch (err) {
           URL.revokeObjectURL(url);
           reject(err);
@@ -508,7 +529,13 @@
     });
   }
 
-  async function embedImageFile(pdfDoc, file) {
+  async function embedImageFile(pdfDoc, file, qualityMode) {
+    if (qualityMode === 'optimal') {
+      // 1200px across an 8.4cm card is ~363 DPI: razor-sharp print quality and ~10x lighter PDF
+      const jpgBytes = await renderFileToCanvasBytes(file, 'image/jpeg', 0.94, 1200);
+      return await pdfDoc.embedJpg(jpgBytes);
+    }
+
     const rawBuffer = await file.arrayBuffer();
     const bytes = new Uint8Array(rawBuffer);
     const fmt = detectImageFormat(bytes);
@@ -527,7 +554,7 @@
       }
     }
 
-    const pngBytes = await convertFileToPngBytes(file);
+    const pngBytes = await renderFileToCanvasBytes(file, 'image/png', undefined, null);
     return await pdfDoc.embedPng(pngBytes);
   }
 
@@ -584,7 +611,7 @@
     const embeddedCache = new Map();
     for (const item of state.items) {
       if (!embeddedCache.has(item.sourceId)) {
-        const embedded = await embedImageFile(pdfDoc, item.file);
+        const embedded = await embedImageFile(pdfDoc, item.file, state.settings.pdfQuality);
         embeddedCache.set(item.sourceId, embedded);
       }
     }
@@ -776,6 +803,11 @@
       renderAll();
     });
 
+    el.pdfQuality.addEventListener('change', () => {
+      state.settings.pdfQuality = el.pdfQuality.value;
+      renderAll();
+    });
+
     el.showGuides.addEventListener('change', () => {
       state.settings.showGuides = el.showGuides.checked;
       renderAll();
@@ -787,6 +819,7 @@
       el.verticalAlign.value = DEFAULT_SETTINGS.verticalAlign;
       el.colGapMm.value = String(DEFAULT_SETTINGS.colGapMm);
       el.rowGapMm.value = String(DEFAULT_SETTINGS.rowGapMm);
+      el.pdfQuality.value = DEFAULT_SETTINGS.pdfQuality;
       el.showGuides.checked = DEFAULT_SETTINGS.showGuides;
       renderAll();
       showToast('Formato original restaurado.');
