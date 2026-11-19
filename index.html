@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Impresión QR — Generador de PDF para Mesas</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <!-- Top Header -->
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-icon" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="7" height="7" rx="1"></rect>
+            <rect x="14" y="3" width="7" height="7" rx="1"></rect>
+            <rect x="3" y="14" width="7" height="7" rx="1"></rect>
+            <path d="M14 14h3v3h-3z"></path>
+            <path d="M20 14v3h-3"></path>
+            <path d="M14 20h7"></path>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <h1>Impresión QR</h1>
+          <p>Arma hojas listas para cortar y doblar (3 QR por hoja, fila superior rotada 180°)</p>
+        </div>
+      </div>
+
+      <div class="topbar-actions">
+        <div class="summary-pill" id="summaryPill" aria-live="polite">
+          0 imágenes · 0 hojas
+        </div>
+        <button type="button" class="btn btn-secondary" id="btnPrint" disabled title="Abrir PDF en una pestaña nueva para imprimir">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6 9 6 2 18 2 18 9"></polyline>
+            <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+            <rect x="6" y="14" width="12" height="8"></rect>
+          </svg>
+          <span>Abrir / Imprimir</span>
+        </button>
+        <button type="button" class="btn btn-primary" id="btnGenerate" disabled>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          <span id="btnGenerateLabel">Descargar PDF</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <main class="workspace">
+      <!-- Left Panel: Upload, Queue & Settings -->
+      <aside class="sidebar">
+        <!-- Upload Dropzone -->
+        <section class="panel upload-panel">
+          <div class="dropzone" id="dropzone" role="button" tabindex="0" aria-label="Seleccionar o arrastrar imágenes QR">
+            <input type="file" id="fileInput" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp" multiple hidden />
+            <div class="dropzone-icon" aria-hidden="true">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="17 8 12 3 7 8"></polyline>
+                <line x1="12" y1="3" x2="12" y2="15"></line>
+              </svg>
+            </div>
+            <div class="dropzone-title">Selecciona o arrastra tus imágenes QR</div>
+            <div class="dropzone-sub">PNG, JPG o WebP · Puedes subir varias a la vez</div>
+            <button type="button" class="btn btn-outline btn-sm" id="btnSelectFiles">Seleccionar imágenes</button>
+          </div>
+        </section>
+
+        <!-- Output Filename -->
+        <section class="panel filename-panel">
+          <label class="field-label" for="outputName">Nombre del archivo PDF</label>
+          <div class="input-suffix-wrap">
+            <input type="text" id="outputName" value="QR-Impresion" placeholder="QR-Impresion" autocomplete="off" />
+            <span class="input-suffix">.pdf</span>
+          </div>
+        </section>
+
+        <!-- Image List -->
+        <section class="panel queue-panel">
+          <div class="panel-header">
+            <h2>Imágenes cargadas <span class="badge" id="countBadge">0</span></h2>
+            <div class="panel-tools">
+              <button type="button" class="icon-text-btn" id="btnSortAZ" disabled title="Ordenar alfabéticamente">A–Z</button>
+              <button type="button" class="icon-text-btn danger" id="btnClearAll" disabled title="Quitar todas las imágenes">Limpiar</button>
+            </div>
+          </div>
+
+          <div class="queue-empty" id="queueEmpty">
+            Aún no has agregado imágenes. Sube tus QR cuadrados y se acomodarán automáticamente de a 3 por hoja.
+          </div>
+
+          <ul class="queue-list" id="queueList" aria-label="Lista de imágenes QR"></ul>
+        </section>
+
+        <!-- Collapsible Format Settings -->
+        <section class="panel settings-panel">
+          <details id="settingsDetails">
+            <summary class="settings-summary">
+              <span>Ajustes de formato</span>
+              <span class="settings-hint">Formato original activo</span>
+            </summary>
+
+            <div class="settings-body">
+              <div class="setting-row">
+                <label for="pageSize">Tamaño de hoja</label>
+                <select id="pageSize">
+                  <option value="letter" selected>Carta Horizontal (27.9 × 21.6 cm)</option>
+                  <option value="a4">A4 Horizontal (29.7 × 21.0 cm)</option>
+                </select>
+              </div>
+
+              <div class="setting-row">
+                <label for="verticalAlign">Posición vertical</label>
+                <select id="verticalAlign">
+                  <option value="top" selected>Superior (igual al PDF de referencia)</option>
+                  <option value="center">Centrado en la hoja</option>
+                </select>
+              </div>
+
+              <div class="setting-grid-2">
+                <div class="setting-row">
+                  <label for="colGapMm">Separación horizontal (mm)</label>
+                  <input type="number" id="colGapMm" min="0" max="15" step="0.2" value="1.2" />
+                </div>
+                <div class="setting-row">
+                  <label for="rowGapMm">Separación doblez (mm)</label>
+                  <input type="number" id="rowGapMm" min="0" max="20" step="0.5" value="3.5" />
+                </div>
+              </div>
+
+              <div class="setting-row checkbox-row">
+                <label class="checkbox-label">
+                  <input type="checkbox" id="showGuides" />
+                  <span>Agregar guías suaves de corte y doblez</span>
+                </label>
+              </div>
+
+              <button type="button" class="btn btn-ghost btn-sm full-width" id="btnResetSettings">
+                Restaurar formato original
+              </button>
+            </div>
+          </details>
+        </section>
+      </aside>
+
+      <!-- Right Panel: Live WYSIWYG Preview -->
+      <section class="preview-area">
+        <div class="preview-header">
+          <div>
+            <h2>Vista previa del PDF</h2>
+            <p class="preview-sub" id="previewSubtitle">
+              Cada hoja incluye hasta 3 tarjetas duplicadas: fila superior invertida (180°) y fila inferior normal.
+            </p>
+          </div>
+        </div>
+
+        <!-- Empty Preview State -->
+        <div class="preview-empty" id="previewEmpty">
+          <div class="mock-sheet" aria-hidden="true">
+            <div class="mock-grid">
+              <div class="mock-card rotated"><span>QR 1 (180°)</span></div>
+              <div class="mock-card rotated"><span>QR 2 (180°)</span></div>
+              <div class="mock-card rotated"><span>QR 3 (180°)</span></div>
+              <div class="mock-card"><span>QR 1</span></div>
+              <div class="mock-card"><span>QR 2</span></div>
+              <div class="mock-card"><span>QR 3</span></div>
+            </div>
+            <div class="mock-fold-label">── Línea de doblez ──</div>
+          </div>
+          <h3>Tu vista previa aparecerá aquí</h3>
+          <p>
+            Selecciona tus imágenes cuadradas a la izquierda. Las páginas se organizarán automáticamente en
+            formato horizontal listas para imprimir, cortar y doblar.
+          </p>
+        </div>
+
+        <!-- Rendered Pages Container -->
+        <div class="pages-stack" id="pagesStack"></div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Toast Notification -->
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="./lib/pdf-lib.min.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
